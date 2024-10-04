@@ -8,7 +8,10 @@ import { Product } from './product/entity/product.entity';
 
 @Module({
   imports: [
-    // CacheModule.register(),
+    CacheModule.register({
+      ttl: 0,
+      max: 10,
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
@@ -27,7 +30,7 @@ import { Product } from './product/entity/product.entity';
         entities: [Product],
         synchronize: configService.get<boolean>('DB_SYNCHRONIZE'),
         ssl: {
-          rejectUnauthorized: false, // Accept self-signed certificates
+          rejectUnauthorized: false,
         },
       }),
     }),
