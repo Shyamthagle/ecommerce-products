@@ -6,7 +6,7 @@ import { ProductController } from './product.controller';
 import { CacheModule } from '@nestjs/cache-manager';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Product]), CacheModule.register()],
+  imports: [CacheModule.register(), TypeOrmModule.forFeature([Product])],
   controllers: [ProductController],
   providers: [ProductService],
 })

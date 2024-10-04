@@ -1,16 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductController } from './product.controller';
 import { ProductService } from './product.service';
+import { ProductResponse, DeleteResponse } from './interface/product.interface';
 import { Product } from './entity/product.entity';
-import { DeleteResponse, ProductResponse } from './interface/product.interface';
 
 describe('ProductController', () => {
-    let productController: ProductController;
+    let controller: ProductController;
     let productService: ProductService;
 
     const mockProductService = {
         createProduct: jest.fn(),
-        GetProducts: jest.fn(),
+        getProducts: jest.fn(), // Corrected method name
         getProductById: jest.fn(),
         updateProduct: jest.fn(),
         deleteProduct: jest.fn(),
@@ -20,109 +20,95 @@ describe('ProductController', () => {
         const module: TestingModule = await Test.createTestingModule({
             controllers: [ProductController],
             providers: [
-                {
-                    provide: ProductService,
-                    useValue: mockProductService,
-                },
+                { provide: ProductService, useValue: mockProductService },
             ],
         }).compile();
 
-        productController = module.get<ProductController>(ProductController);
+        controller = module.get<ProductController>(ProductController);
         productService = module.get<ProductService>(ProductService);
     });
 
-    it('should be defined', () => {
-        expect(productController).toBeDefined();
+    afterEach(() => {
+        jest.clearAllMocks();
     });
 
-    describe('createProduct', () => {
-        it('should create a product successfully', async () => {
-            const product = new Product(); // Mock product object
-            const createdProductResponse: ProductResponse = {
-                success: true,
-                message: 'Product created successfully',
-                data: product,
-            };
+    it('should create a product', async () => {
+        const productData = { name: 'Test Product', price: 100, stock: 10 };
+        const response: ProductResponse = {
+            success: true,
+            message: 'Product created successfully',
+            data: { ...productData, id: 1 },
+        };
 
-            mockProductService.createProduct.mockResolvedValue(createdProductResponse);
+        mockProductService.createProduct.mockResolvedValue(response);
 
-            const result = await productController.createProduct(product);
+        const result = await controller.createProduct(productData as Product);
 
-            expect(result).toEqual(createdProductResponse);
-            expect(mockProductService.createProduct).toHaveBeenCalledWith(product);
-        });
+        expect(result).toEqual(response);
+        expect(mockProductService.createProduct).toHaveBeenCalledWith(productData);
     });
 
-    describe('GetProducts', () => {
-        it('should return an array of products successfully', async () => {
-            const products = [new Product(), new Product()]; // Mock product array
-            const productsResponse: ProductResponse = {
-                success: true,
-                message: 'Products retrieved successfully',
-                data: products,
-            };
+    it('should retrieve products', async () => {
+        const response: ProductResponse = {
+            success: true,
+            message: 'Products retrieved successfully',
+            count: 1,
+            data: [{ id: 1, name: 'Product A', price: 100, stock: 10 }],
+        };
 
-            mockProductService.GetProducts.mockResolvedValue(productsResponse);
+        mockProductService.getProducts.mockResolvedValue(response); // Corrected method name
 
-            const result = await productController.GetProducts();
+        const result = await controller.getProducts();
 
-            expect(result).toEqual(productsResponse);
-            expect(mockProductService.GetProducts).toHaveBeenCalled();
-        });
+        expect(result).toEqual(response);
+        expect(mockProductService.getProducts).toHaveBeenCalled(); // Corrected method name
     });
 
-    describe('getProductById', () => {
-        it('should return a product successfully', async () => {
-            const productId = 1;
-            const product = new Product(); // Mock product object
-            const productResponse: ProductResponse = {
-                success: true,
-                message: 'Product retrieved successfully',
-                data: product,
-            };
+    it('should retrieve a product by id', async () => {
+        const productId = 1;
+        const response: ProductResponse = {
+            success: true,
+            message: 'Product retrieved successfully',
+            data: { id: productId, name: 'Product A', price: 100, stock: 10 },
+        };
 
-            mockProductService.getProductById.mockResolvedValue(productResponse);
+        mockProductService.getProductById.mockResolvedValue(response);
 
-            const result = await productController.getProductById(productId);
+        const result = await controller.getProductById(productId);
 
-            expect(result).toEqual(productResponse);
-            expect(mockProductService.getProductById).toHaveBeenCalledWith(productId);
-        });
+        expect(result).toEqual(response);
+        expect(mockProductService.getProductById).toHaveBeenCalledWith(productId);
     });
 
-    describe('updateProduct', () => {
-        it('should update a product successfully', async () => {
-            const productId = 1;
-            const quantity = 5; // New quantity
-            const updatedProductResponse: ProductResponse = {
-                success: true,
-                message: 'Product updated successfully',
-                data: new Product(), // Mock updated product object
-            };
+    it('should update a product', async () => {
+        const productId = 1;
+        const quantity = 5;
+        const response: ProductResponse = {
+            success: true,
+            message: 'Product updated successfully',
+            data: { id: productId, name: 'Product A', price: 100, stock: 5 },
+        };
 
-            mockProductService.updateProduct.mockResolvedValue(updatedProductResponse);
+        mockProductService.updateProduct.mockResolvedValue(response);
 
-            const result = await productController.updateProduct(productId, quantity);
+        const result = await controller.updateProduct(productId, quantity);
 
-            expect(result).toEqual(updatedProductResponse);
-            expect(mockProductService.updateProduct).toHaveBeenCalledWith(productId, quantity);
-        });
+        expect(result).toEqual(response);
+        expect(mockProductService.updateProduct).toHaveBeenCalledWith(productId, quantity);
     });
 
-    describe('deleteProduct', () => {
-        it('should delete a product successfully', async () => {
-            const productId = 1;
-            const deleteResponse: DeleteResponse = {
-                success: true,
-                message: 'Product deleted successfully',
-            };
+    it('should delete a product', async () => {
+        const productId = 1;
+        const response: DeleteResponse = {
+            success: true,
+            message: 'Product deleted successfully',
+        };
 
-            mockProductService.deleteProduct.mockResolvedValue(deleteResponse);
+        mockProductService.deleteProduct.mockResolvedValue(response);
 
-            const result = await productController.deleteProduct(productId);
+        const result = await controller.deleteProduct(productId);
 
-            expect(result).toEqual(deleteResponse);
-            expect(mockProductService.deleteProduct).toHaveBeenCalledWith(productId);
-        });
+        expect(result).toEqual(response);
+        expect(mockProductService.deleteProduct).toHaveBeenCalledWith(productId);
     });
 });

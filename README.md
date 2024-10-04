@@ -53,3 +53,7 @@ $ npm run start:dev
 
 # unit tests
 $ npm run test
+
+## Caching 
+
+The project uses Redis to to cache the response.

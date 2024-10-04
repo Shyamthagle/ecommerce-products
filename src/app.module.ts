@@ -8,10 +8,6 @@ import { Product } from './product/entity/product.entity';
 
 @Module({
   imports: [
-    CacheModule.register({
-      ttl: 0,
-      max: 10,
-    }),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],

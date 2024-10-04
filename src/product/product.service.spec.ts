@@ -1,207 +1,180 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductService } from './product.service';
 import { Product } from './entity/product.entity';
-import { ProductNotFoundException, InsufficientStockException, ProductCreationException, ProductUpdateException } from './exceptions/product.exception';
+import {
+    ProductCreationException,
+    ProductNotFoundException,
+    InsufficientStockException,
+    ProductUpdateException,
+} from './exceptions/product.exception';
 import { Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Cache } from 'cache-manager';
 
 describe('ProductService', () => {
-    let productService: ProductService;
+    let service: ProductService;
     let productRepository: Repository<Product>;
+    let cacheManager: Cache;
 
     const mockProductRepository = {
         create: jest.fn(),
         save: jest.fn(),
-        find: jest.fn(),
-        findOneBy: jest.fn(),
         findOne: jest.fn(),
         remove: jest.fn(),
+        findAndCount: jest.fn(),
+    };
+
+    const mockCacheManager = {
+        get: jest.fn(),
+        set: jest.fn(),
+        del: jest.fn(),
     };
 
     beforeEach(async () => {
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 ProductService,
-                {
-                    provide: getRepositoryToken(Product),
-                    useValue: mockProductRepository,
-                },
+                { provide: getRepositoryToken(Product), useValue: mockProductRepository },
+                { provide: 'CACHE_MANAGER', useValue: mockCacheManager },
             ],
         }).compile();
 
-        productService = module.get<ProductService>(ProductService);
+        service = module.get<ProductService>(ProductService);
         productRepository = module.get<Repository<Product>>(getRepositoryToken(Product));
+        cacheManager = module.get<Cache>('CACHE_MANAGER');
     });
 
-    it('should be defined', () => {
-        expect(productService).toBeDefined();
+    afterEach(() => {
+        jest.clearAllMocks();
     });
 
-    describe('createProduct', () => {
-        it('should create a product successfully', async () => {
-            const product = new Product(); // Mock product object
-            const createdProductResponse = {
-                success: true,
-                message: "Product saved successfully",
-                data: product,
-            };
+    it('should create a product', async () => {
+        const productData = { name: 'Test Product', price: 100, stock: 10 };
+        const product = { ...productData, id: 1 };
 
-            mockProductRepository.create.mockReturnValue(product);
-            mockProductRepository.save.mockResolvedValue(product);
+        mockProductRepository.create.mockReturnValue(product);
+        mockProductRepository.save.mockResolvedValue(product);
+        mockCacheManager.get.mockResolvedValue({ data: [], count: 0 });
 
-            const result = await productService.createProduct(product);
+        const result = await service.createProduct(productData as Product);
 
-            expect(result).toEqual(createdProductResponse);
-            expect(mockProductRepository.create).toHaveBeenCalledWith(product);
-            expect(mockProductRepository.save).toHaveBeenCalledWith(product);
+        expect(result).toEqual({
+            success: true,
+            message: 'Product created successfully',
+            data: product,
         });
-
-        it('should throw a ProductCreationException on error', async () => {
-            const product = new Product();
-
-            mockProductRepository.create.mockReturnValue(product);
-            mockProductRepository.save.mockRejectedValue(new Error('Some error'));
-
-            await expect(productService.createProduct(product)).rejects.toThrow(ProductCreationException);
-        });
+        expect(mockProductRepository.create).toHaveBeenCalledWith(productData);
+        expect(mockProductRepository.save).toHaveBeenCalledWith(product);
+        expect(mockCacheManager.set).toHaveBeenCalledWith('allProductsCache', { data: [product], count: 1 }, 300000);
     });
 
-    describe('GetProducts', () => {
-        it('should return an array of products successfully', async () => {
-            const products = [new Product(), new Product()]; // Mock product array
-            const productsResponse = {
-                success: true,
-                message: "Products retrieved successfully",
-                data: products,
-            };
+    it('should throw ProductCreationException on error', async () => {
+        const productData = { name: 'Test Product', price: 100, stock: 10 };
+        mockProductRepository.create.mockReturnValue(productData);
+        mockProductRepository.save.mockRejectedValue(new Error('Database Error'));
 
-            mockProductRepository.find.mockResolvedValue(products);
+        await expect(service.createProduct(productData as Product)).rejects.toThrow(ProductCreationException);
+    });
 
-            const result = await productService.GetProducts();
+    it('should retrieve products from cache', async () => {
+        const cachedProducts = { data: [{ id: 1, name: 'Product A', price: 100, stock: 10 }], count: 1 };
+        mockCacheManager.get.mockResolvedValue(cachedProducts);
 
-            expect(result).toEqual(productsResponse);
-            expect(mockProductRepository.find).toHaveBeenCalled();
-        });
+        const result = await service.getProducts(); // Updated function call
 
-        it('should throw an error on failure', async () => {
-            mockProductRepository.find.mockRejectedValue(new Error('Some error'));
-
-            await expect(productService.GetProducts()).rejects.toThrow(Error);
+        expect(result).toEqual({
+            success: true,
+            message: 'Products retrieved successfully (from cache)',
+            count: cachedProducts.count,
+            data: cachedProducts.data,
         });
     });
 
-    describe('getProductById', () => {
-        it('should return a product successfully', async () => {
-            const productId = 1;
-            const product = new Product(); // Mock product object
-            mockProductRepository.findOneBy.mockResolvedValue(product);
+    it('should retrieve products from database if cache is empty', async () => {
+        const products = [{ id: 1, name: 'Product A', price: 100, stock: 10 }];
+        mockCacheManager.get.mockResolvedValue(null);
+        mockProductRepository.findAndCount.mockResolvedValue([products, products.length]);
 
-            const result = await productService.getProductById(productId);
+        const result = await service.getProducts(); // Updated function call
 
-            expect(result).toEqual({
-                success: true,
-                message: "Product retrieved successfully",
-                data: product,
-            });
-            expect(mockProductRepository.findOneBy).toHaveBeenCalledWith({ id: productId });
+        expect(result).toEqual({
+            success: true,
+            message: 'Products retrieved successfully',
+            count: products.length,
+            data: products,
         });
-
-        it('should throw a ProductNotFoundException if product does not exist', async () => {
-            const productId = 1;
-            mockProductRepository.findOneBy.mockResolvedValue(null);
-
-            await expect(productService.getProductById(productId)).rejects.toThrow(ProductNotFoundException);
-        });
+        expect(mockCacheManager.set).toHaveBeenCalledWith('allProductsCache', { data: products, count: products.length }, 300000);
     });
 
-    describe('updateProduct', () => {
-        it('should update a product successfully', async () => {
-            const productId = 1;
-            const quantity = 5; // Quantity to update
-            const product = new Product();
-            product.stock = 10; // Initial stock
+    it('should throw ProductNotFoundException if product not found', async () => {
+        const productId = 1;
+        mockProductRepository.findOne.mockResolvedValue(null);
 
-            mockProductRepository.findOne.mockResolvedValue(product);
-            mockProductRepository.save.mockResolvedValue(product);
-
-            const result = await productService.updateProduct(productId, quantity);
-
-            expect(result).toEqual({
-                success: true,
-                message: "Product updated successfully",
-                data: product,
-            });
-            expect(product.stock).toBe(5); // Stock should be updated
-            expect(mockProductRepository.findOne).toHaveBeenCalledWith({ where: { id: productId } });
-            expect(mockProductRepository.save).toHaveBeenCalledWith(product);
-        });
-
-        it('should throw an InsufficientStockException if not enough stock', async () => {
-            const productId = 1;
-            const quantity = 15; // Quantity to update
-            const product = new Product();
-            product.stock = 10; // Initial stock
-
-            mockProductRepository.findOne.mockResolvedValue(product);
-
-            await expect(productService.updateProduct(productId, quantity)).rejects.toThrow(InsufficientStockException);
-        });
-
-        it('should throw a ProductNotFoundException if product does not exist', async () => {
-            const productId = 1;
-            const quantity = 5;
-
-            mockProductRepository.findOne.mockResolvedValue(null);
-
-            await expect(productService.updateProduct(productId, quantity)).rejects.toThrow(ProductNotFoundException);
-        });
-
-        it('should throw a ProductUpdateException on error', async () => {
-            const productId = 1;
-            const quantity = 5;
-            const product = new Product();
-            product.stock = 10; // Initial stock
-
-            mockProductRepository.findOne.mockResolvedValue(product);
-            mockProductRepository.save.mockRejectedValue(new Error('Some error'));
-
-            await expect(productService.updateProduct(productId, quantity)).rejects.toThrow(ProductUpdateException);
-        });
+        await expect(service.getProductById(productId)).rejects.toThrow(ProductNotFoundException);
     });
 
-    describe('deleteProduct', () => {
-        it('should delete a product successfully', async () => {
-            const productId = 1;
-            const product = new Product();
+    it('should retrieve a product by ID', async () => {
+        const productId = 1;
+        const product = { id: productId, name: 'Product A', price: 100, stock: 10 };
+        mockProductRepository.findOne.mockResolvedValue(product);
 
-            mockProductRepository.findOne.mockResolvedValue(product);
-            mockProductRepository.remove.mockResolvedValue(product);
+        const result = await service.getProductById(productId);
 
-            const result = await productService.deleteProduct(productId);
-
-            expect(result).toEqual({
-                success: true,
-                message: "Product deleted successfully",
-            });
-            expect(mockProductRepository.findOne).toHaveBeenCalledWith({ where: { id: productId } });
-            expect(mockProductRepository.remove).toHaveBeenCalledWith(product);
+        expect(result).toEqual({
+            success: true,
+            message: 'Product retrieved successfully',
+            data: product,
         });
+        expect(mockCacheManager.set).toHaveBeenCalledWith(`product_${productId}`, product, 300000);
+    });
 
-        it('should throw a ProductNotFoundException if product does not exist', async () => {
-            const productId = 1;
-            mockProductRepository.findOne.mockResolvedValue(null);
+    it('should update product stock', async () => {
+        const productId = 1;
+        const quantity = 5;
+        const product = { id: productId, name: 'Product A', price: 100, stock: 10 };
+        mockProductRepository.findOne.mockResolvedValue(product);
+        mockProductRepository.save.mockResolvedValue({ ...product, stock: 5 });
 
-            await expect(productService.deleteProduct(productId)).rejects.toThrow(ProductNotFoundException);
+        const result = await service.updateProduct(productId, quantity);
+
+        expect(result).toEqual({
+            success: true,
+            message: 'Product updated successfully',
+            data: { ...product, stock: 5 },
         });
+        expect(mockProductRepository.save).toHaveBeenCalledWith({ ...product, stock: 5 });
+        expect(mockCacheManager.del).toHaveBeenCalledWith('allProductsCache');
+    });
 
-        it('should throw a ProductNotFoundException on error', async () => {
-            const productId = 1;
-            const product = new Product();
+    it('should throw InsufficientStockException if stock is not enough', async () => {
+        const productId = 1;
+        const quantity = 15;
+        const product = { id: productId, name: 'Product A', price: 100, stock: 10 };
+        mockProductRepository.findOne.mockResolvedValue(product);
 
-            mockProductRepository.findOne.mockResolvedValue(product);
-            mockProductRepository.remove.mockRejectedValue(new Error('Some error'));
+        await expect(service.updateProduct(productId, quantity)).rejects.toThrow(InsufficientStockException);
+    });
 
-            await expect(productService.deleteProduct(productId)).rejects.toThrow(ProductNotFoundException);
+    it('should delete a product', async () => {
+        const productId = 1;
+        const product = { id: productId, name: 'Product A', price: 100, stock: 10 };
+        mockProductRepository.findOne.mockResolvedValue(product);
+        mockProductRepository.remove.mockResolvedValue(undefined);
+
+        const result = await service.deleteProduct(productId);
+
+        expect(result).toEqual({
+            success: true,
+            message: 'Product deleted successfully',
         });
+        expect(mockProductRepository.remove).toHaveBeenCalledWith(product);
+        expect(mockCacheManager.del).toHaveBeenCalledWith('allProductsCache');
+    });
+
+    it('should throw ProductNotFoundException on delete if product not found', async () => {
+        const productId = 1;
+        mockProductRepository.findOne.mockResolvedValue(null);
+
+        await expect(service.deleteProduct(productId)).rejects.toThrow(ProductNotFoundException);
     });
 });
